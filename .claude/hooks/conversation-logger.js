@@ -15,21 +15,6 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-function appendDebugLog(vaultRoot, payload) {
-  try {
-    const debugDir = path.join(vaultRoot, ".claude", "hooks");
-    const debugFile = path.join(debugDir, ".conversation-logger-debug.log");
-    ensureDir(debugDir);
-    const line = JSON.stringify({
-      ts: new Date().toISOString(),
-      ...payload,
-    });
-    fs.appendFileSync(debugFile, `${line}\n`, "utf8");
-  } catch {
-    // Keep fail-open behavior.
-  }
-}
-
 function exitOk() {
   process.exit(0);
 }
@@ -539,19 +524,7 @@ try {
   const vaultRoot = path.resolve(scriptDir, "..", "..");
   const transcriptPath = hook.transcript_path || hook.transcriptPath || "";
   const transcriptExists = Boolean(transcriptPath) && fs.existsSync(transcriptPath);
-  appendDebugLog(vaultRoot, {
-    stage: "start",
-    transcriptPath: transcriptPath || null,
-    transcriptExists,
-    hookKeys: isPlainObject(hook) ? Object.keys(hook) : [],
-  });
-  if (!transcriptPath || !transcriptExists) {
-    appendDebugLog(vaultRoot, {
-      stage: "exit",
-      reason: "missing_or_not_found_transcript",
-    });
-    exitOk();
-  }
+  if (!transcriptPath || !transcriptExists) exitOk();
 
   const config = loadConfig(vaultRoot);
   const logDir = resolveOutputDir(vaultRoot, config.outputDir);
@@ -577,12 +550,6 @@ try {
 
   if (newLines.length === 0) {
     fs.writeFileSync(stateFile, String(totalLines), "utf8");
-    appendDebugLog(vaultRoot, {
-      stage: "exit",
-      reason: "no_new_lines",
-      totalLines,
-      lastLine,
-    });
     exitOk();
   }
 
@@ -608,13 +575,6 @@ try {
   const block = buildConversationBlock(stamp, title, newLines);
   if (!block) {
     fs.writeFileSync(stateFile, String(totalLines), "utf8");
-    appendDebugLog(vaultRoot, {
-      stage: "exit",
-      reason: "empty_block_after_filtering",
-      newLines: newLines.length,
-      totalLines,
-      lastLine,
-    });
     exitOk();
   }
 
@@ -637,25 +597,7 @@ try {
     fs.writeFileSync(logFile, entry, "utf8");
   }
   fs.writeFileSync(stateFile, String(totalLines), "utf8");
-  appendDebugLog(vaultRoot, {
-    stage: "done",
-    reason: "appended",
-    logFile,
-    newLines: newLines.length,
-  });
-} catch (error) {
-  try {
-    const scriptDir = __dirname;
-    const vaultRoot = path.resolve(scriptDir, "..", "..");
-    appendDebugLog(vaultRoot, {
-      stage: "catch",
-      reason: "unexpected_error",
-      errorMessage: error && error.message ? String(error.message) : "",
-      errorStack: error && error.stack ? String(error.stack).split("\n").slice(0, 3).join(" | ") : "",
-    });
-  } catch {
-    // Keep fail-open behavior.
-  }
+} catch {
   exitOk();
 }
 
