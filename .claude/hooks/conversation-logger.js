@@ -11,6 +11,7 @@
  * Failure mode: fail open. Logging should never trap the assistant in a loop.
  */
 
+
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
