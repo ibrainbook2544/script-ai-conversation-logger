@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/conversation-logger.js",
+            "timeout": 30,
+            "statusMessage": "Logging conversation..."
+          }
+        ]
+      }
+    ]
+  }
+}
