@@ -5,7 +5,7 @@
  * Compatible with both Claude Code hooks and Codex hooks.
  *
  * Reads the hook JSON from stdin, extracts transcript_path,
- * appends human-readable Markdown dialogue to wiki/conversations/YYYY-MM-DD.md,
+ * appends human-readable Markdown dialogue to log/YYYY-MM-DD.md,
  * and stores a per-transcript line offset so repeated Stop events do not duplicate logs.
  *
  * Failure mode: fail open. Logging should never trap the assistant in a loop.
@@ -305,8 +305,8 @@ function formatMessageTimestamp(value) {
 }
 
 function loadConfig(vaultRoot) {
-  const configPath = path.join(vaultRoot, ".claude", "conversation-logger.config.json");
-  const config = { outputDir: "wiki/conversations" };
+  const configPath = path.join(vaultRoot, ".script", "conversation-logger.config.json");
+  const config = { outputDir: "log" };
 
   if (!fs.existsSync(configPath)) return config;
 
@@ -521,14 +521,14 @@ try {
   const input = readStdin();
   const hook = JSON.parse(input || "{}");
   const scriptDir = __dirname;
-  const vaultRoot = path.resolve(scriptDir, "..", "..");
+  const vaultRoot = path.resolve(scriptDir, "..");
   const transcriptPath = hook.transcript_path || hook.transcriptPath || "";
   const transcriptExists = Boolean(transcriptPath) && fs.existsSync(transcriptPath);
   if (!transcriptPath || !transcriptExists) exitOk();
 
   const config = loadConfig(vaultRoot);
   const logDir = resolveOutputDir(vaultRoot, config.outputDir);
-  const stateDir = path.join(vaultRoot, ".claude", "hooks", ".conversation-logger-state");
+  const stateDir = path.join(vaultRoot, ".script", ".conversation-logger-state");
   ensureDir(logDir);
   ensureDir(stateDir);
 

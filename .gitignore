@@ -1,3 +1,2 @@
-wiki/
-wiki/conversations/
-.claude/hooks/.conversation-logger-state/
+log/
+.script/.conversation-logger-state/
