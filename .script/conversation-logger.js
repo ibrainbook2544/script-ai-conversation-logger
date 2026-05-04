@@ -583,14 +583,11 @@ try {
   } else {
     const entry = [
       "---",
-      "type: conversation",
+      "type: log",
       "origin: hook-transcript",
-      `summary: Conversation transcript log for ${day}`,
-      "tags: [conversation-log, hook]",
+      "tags: [conversation, log, hook]",
       `date: ${day}`,
       "---",
-      "",
-      "# Conversation Log",
       "",
       block,
     ].join("\n");
