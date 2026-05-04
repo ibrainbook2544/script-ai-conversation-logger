@@ -184,12 +184,12 @@ function formatMarkdownContent(content) {
 }
 
 function normalizedRenderedContent(content) {
-  const text = normalizeWikiLinks(formatMarkdownContent(content)).replace(/\s+/g, " ").trim();
+  const text = formatMarkdownContent(content).replace(/\s+/g, " ").trim();
   return text;
 }
 
 function contentToSearchText(content) {
-  return normalizeWikiLinks(formatMarkdownContent(content))
+  return formatMarkdownContent(content)
     .replace(/\r\n?/g, "\n")
     .replace(/```(?:xml|json)?/gi, "")
     .replace(/```/g, "")
@@ -235,14 +235,6 @@ function isNoiseContent(content) {
     isTitleGenerationPrompt(content) ||
     /^Initialize .{0,80}conversation/i.test(text)
   );
-}
-
-function normalizeWikiLinks(text) {
-  if (typeof text !== "string" || !text) return text;
-  return text
-    .replace(/`(\[\[[\s\S]*?\]\])`/g, "$1")
-    .replace(/"(\[\[[\s\S]*?\]\])"/g, "$1")
-    .replace(/'(\[\[[\s\S]*?\]\])'/g, "$1");
 }
 
 function contentToTitle(content) {
@@ -306,7 +298,19 @@ function formatMessageTimestamp(value) {
 
 function loadConfig(vaultRoot) {
   const configPath = path.join(vaultRoot, ".script", "conversation-logger.config.json");
-  const config = { outputDir: "log" };
+  const config = {
+    outputDir: "log",
+    header: [
+      "---",
+      "type: log",
+      "origin: hook-transcript",
+      "tags: [conversation, log, hook]",
+      "date: {{day}}",
+      "---",
+      "",
+    ].join("\n"),
+    tailer: "",
+  };
 
   if (!fs.existsSync(configPath)) return config;
 
@@ -315,11 +319,35 @@ function loadConfig(vaultRoot) {
     if (loaded && typeof loaded.outputDir === "string" && loaded.outputDir.trim()) {
       config.outputDir = loaded.outputDir.trim();
     }
+    if (loaded && typeof loaded.header === "string") {
+      config.header = loaded.header;
+    }
+    if (loaded && typeof loaded.tailer === "string") {
+      config.tailer = loaded.tailer;
+    }
   } catch {
     // Invalid config should not block logging. Fall back to the default path.
   }
 
   return config;
+}
+
+function renderConfigTemplate(text, values) {
+  return String(text || "").replace(/\{\{(\w+)\}\}/g, (match, key) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  );
+}
+
+function buildNewLogEntry(config, day, block) {
+  const header = renderConfigTemplate(config.header, { day }).replace(/\r\n?/g, "\n").trimEnd();
+  const tailer = renderConfigTemplate(config.tailer, { day }).replace(/\r\n?/g, "\n").trimStart();
+  const parts = [];
+
+  if (header) parts.push(header);
+  parts.push(block.trimEnd());
+  if (tailer) parts.push(tailer);
+
+  return `${parts.join("\n\n")}\n`;
 }
 
 function resolveOutputDir(vaultRoot, outputDir) {
@@ -419,7 +447,7 @@ function messageToEntry(message, currentModel = "") {
   const model = cleanModelName(message.model) || cleanModelName(currentModel);
   const roleLabel = message.role === "user" ? "[User]" : `[${model || "AI"}]`;
   if (isNoiseContent(message.content)) return null;
-  const body = normalizeWikiLinks(formatMarkdownContent(message.content ?? "")).trim();
+  const body = formatMarkdownContent(message.content ?? "").trim();
   if (!body) return null;
 
   const messageTimestamp = message.timestamp ? ` - ${formatMessageTimestamp(message.timestamp)}` : "";
@@ -581,16 +609,7 @@ try {
   if (fs.existsSync(logFile)) {
     appendConversationToExistingLog(logFile, block);
   } else {
-    const entry = [
-      "---",
-      "type: log",
-      "origin: hook-transcript",
-      "tags: [conversation, log, hook]",
-      `date: ${day}`,
-      "---",
-      "",
-      block,
-    ].join("\n");
+    const entry = buildNewLogEntry(config, day, block);
     fs.writeFileSync(logFile, entry, "utf8");
   }
   fs.writeFileSync(stateFile, String(totalLines), "utf8");

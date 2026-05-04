@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "node .script/conversation-logger.js",
-            "timeout": 30,
+            "timeout": 10,
             "statusMessage": "Logging conversation..."
           }
         ]

@@ -1,3 +1,5 @@
 {
-  "outputDir": "conversation-logs"
+  "outputDir": "conversation-logs",
+  "header": "---\ntype: log\norigin: hook-transcript\ntags: [conversation, log, hook]\ndate: {{day}}\n---\n",
+  "tailer": ""
 }
