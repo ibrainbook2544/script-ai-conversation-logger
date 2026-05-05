@@ -300,16 +300,7 @@ function loadConfig(vaultRoot) {
   const configPath = path.join(vaultRoot, ".script", "conversation-logger.config.json");
   const config = {
     outputDir: "log",
-    header: [
-      "---",
-      "type: log",
-      "origin: hook-transcript",
-      "tags: [conversation, log, hook]",
-      "date: {{day}}",
-      "---",
-      "",
-    ].join("\n"),
-    tailer: "",
+    header: "",
   };
 
   if (!fs.existsSync(configPath)) return config;
@@ -321,9 +312,6 @@ function loadConfig(vaultRoot) {
     }
     if (loaded && typeof loaded.header === "string") {
       config.header = loaded.header;
-    }
-    if (loaded && typeof loaded.tailer === "string") {
-      config.tailer = loaded.tailer;
     }
   } catch {
     // Invalid config should not block logging. Fall back to the default path.
@@ -340,12 +328,10 @@ function renderConfigTemplate(text, values) {
 
 function buildNewLogEntry(config, day, block) {
   const header = renderConfigTemplate(config.header, { day }).replace(/\r\n?/g, "\n").trimEnd();
-  const tailer = renderConfigTemplate(config.tailer, { day }).replace(/\r\n?/g, "\n").trimStart();
   const parts = [];
 
   if (header) parts.push(header);
   parts.push(block.trimEnd());
-  if (tailer) parts.push(tailer);
 
   return `${parts.join("\n\n")}\n`;
 }
