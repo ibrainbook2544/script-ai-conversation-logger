@@ -108,11 +108,67 @@ function looksLikeXml(text) {
 }
 
 function formatTextBlock(text) {
-  const normalized = String(text || "").replace(/\r\n?/g, "\n");
+  let normalized = String(text || "").replace(/\r\n?/g, "\n");
+  if (!normalized.trim()) return "";
+  // Clean IDE context tags to concise format
+  normalized = normalized
+    .replace(/<ide_opened_file>[^<]*?(?:opened|viewing) (?:the )?file (.*?) in the IDE[^<]*<\/ide_opened_file>/gi,
+      "\u{1F4C2} *Opened: `$1`*")
+    .replace(/<ide_[^>]+>[\s\S]*?<\/ide_[^>]+>/g, "");
   if (!normalized.trim()) return "";
   if (looksLikeJson(normalized)) return fence("json", normalized.trim());
   if (looksLikeXml(normalized)) return fence("xml", normalized.trim());
   return normalized.trimEnd();
+}
+
+function formatToolUseSummary(name, input) {
+  if (typeof input === "string") {
+    return `- \u{1F527} **${name}**: ${input.slice(0, 200)}`;
+  }
+  const inp = isPlainObject(input) ? input : {};
+  switch (name) {
+    case "Bash": {
+      const cmd = inp.command || inp.cmd || "";
+      const desc = inp.description ? ` \u2014 ${inp.description}` : "";
+      return `- \u{1F527} **Bash**: \`${cmd}\`${desc}`;
+    }
+    case "Read":
+      return `- \u{1F4D6} **Read**: \`${inp.file_path || inp.path || ""}\``;
+    case "Write": {
+      const lineCount = String(inp.content || "").split("\n").length;
+      return `- \u270F\uFE0F **Write**: \`${inp.file_path || inp.path || ""}\` (${lineCount} lines)`;
+    }
+    case "Edit":
+      return `- \u270F\uFE0F **Edit**: \`${inp.file_path || inp.path || ""}\``;
+    case "Glob":
+      return `- \u{1F50D} **Glob**: \`${inp.pattern || ""}\` in \`${inp.path || ""}\``;
+    case "Grep":
+      return `- \u{1F50D} **Grep**: \`${inp.pattern || ""}\` in \`${inp.path || ""}\``;
+    case "Skill":
+      return `- \u26A1 **Skill**: ${inp.skill || ""}${inp.args ? " \u2014 " + inp.args : ""}`;
+    case "WebSearch":
+      return `- \u{1F310} **WebSearch**: ${inp.query || inp.search_query || ""}`;
+    case "WebFetch":
+      return `- \u{1F310} **WebFetch**: \`${inp.url || ""}\``;
+    default: {
+      const summary = JSON.stringify(input);
+      return `- \u{1F527} **${name}**: ${summary.length > 200 ? summary.slice(0, 200) + "..." : summary}`;
+    }
+  }
+}
+
+function formatToolResultSummary(content) {
+  const maxLines = 10;
+  const maxChars = 500;
+  const text = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+  if (!text.trim()) return "";
+  const lines = text.split("\n");
+  if (lines.length <= maxLines && text.length <= maxChars) {
+    return lines.map(l => `> ${l}`).join("\n");
+  }
+  const preview = lines.slice(0, maxLines).join("\n").slice(0, maxChars);
+  return preview.split("\n").map(l => `> ${l}`).join("\n") +
+    `\n> *... (${lines.length} lines total)*`;
 }
 
 function formatObjectAsMarkdown(obj) {
@@ -125,24 +181,23 @@ function formatObjectAsMarkdown(obj) {
     return formatTextBlock(obj.text);
   }
 
+  // Thinking blocks: show first few lines, drop cryptographic signature
+  if (obj.type === "thinking" && typeof obj.thinking === "string") {
+    const thinkLines = obj.thinking.split("\n").filter(l => l.trim());
+    const preview = thinkLines.slice(0, 3).join("\n> ");
+    const truncated = thinkLines.length > 3;
+    return `> \u{1F4AD} **Thinking**\n> ${preview}${truncated ? "\n> ..." : ""}`;
+  }
+
   if (obj.type === "tool_call" || obj.type === "tool_use" || obj.type === "function_call") {
     const name = obj.name || obj.tool || obj.function || obj.type;
-    const payload = obj.input ?? obj.arguments ?? obj.params ?? obj.content ?? {};
-    const lines = [`- **Tool:** ${name}`];
-    if (typeof payload === "string") {
-      const rendered = formatMarkdownContent(payload);
-      if (rendered) lines.push("", rendered);
-    } else if (Array.isArray(payload) || isPlainObject(payload)) {
-      lines.push("", fence("json", JSON.stringify(payload, null, 2)));
-    }
-    return lines.join("\n");
+    const input = obj.input ?? obj.arguments ?? obj.params ?? obj.content ?? {};
+    return formatToolUseSummary(name, input);
   }
 
   if (obj.type === "tool_result" || obj.type === "function_result") {
-    const rendered = formatMarkdownContent(obj.content ?? obj.result ?? obj.output ?? obj.text ?? "");
-    return rendered
-      ? `> **Tool result**\n>\n${rendered.split("\n").map((line) => `> ${line}`).join("\n")}`
-      : "";
+    const raw = obj.content ?? obj.result ?? obj.output ?? obj.text ?? "";
+    return formatToolResultSummary(raw);
   }
 
   if (typeof obj.content !== "undefined") {
@@ -454,6 +509,16 @@ function parseTranscriptLine(rawLine) {
   }
 }
 
+function formatFileHistoryEntry(event) {
+  if (!event.snapshot) return null;
+  const backups = event.snapshot.trackedFileBackups;
+  if (!backups || !isPlainObject(backups)) return null;
+  const files = Object.keys(backups);
+  if (files.length === 0) return null;
+  const fileList = files.map(f => `\`${f}\``).join(", ");
+  return `> \u{1F4C1} **Files modified**: ${fileList}\n`;
+}
+
 function extractEntriesWithModels(lines) {
   const entries = [];
   let currentModel = "";
@@ -464,6 +529,13 @@ function extractEntriesWithModels(lines) {
 
     const eventModel = extractModelName(event);
     if (eventModel) currentModel = eventModel;
+
+    // Handle file-history-snapshot: list modified files
+    if (event.type === "file-history-snapshot") {
+      const entry = formatFileHistoryEntry(event);
+      if (entry) entries.push(entry);
+      continue;
+    }
 
     const message = extractTranscriptMessage(event);
     if (!message) continue;
@@ -571,18 +643,29 @@ try {
   const logFile = path.join(logDir, `${day}.md`);
 
   let title = "Conversation Transcript Update";
-  for (let i = newLines.length - 1; i >= 0; i -= 1) {
-    try {
-      const event = JSON.parse(newLines[i]);
-      const message = extractTranscriptMessage(event);
-      if (!message) continue;
-      const candidate = cleanTitle(contentToTitle(message.content));
-      if (candidate) {
-        title = candidate;
-        break;
+  // Prefer ai-title event for conversation title
+  for (const line of newLines) {
+    const event = parseTranscriptLine(line);
+    if (event && event.type === "ai-title" && event.aiTitle) {
+      title = cleanTitle(event.aiTitle);
+      break;
+    }
+  }
+  // Fall back to extracting title from message content
+  if (title === "Conversation Transcript Update") {
+    for (let i = newLines.length - 1; i >= 0; i -= 1) {
+      try {
+        const event = JSON.parse(newLines[i]);
+        const message = extractTranscriptMessage(event);
+        if (!message) continue;
+        const candidate = cleanTitle(contentToTitle(message.content));
+        if (candidate) {
+          title = candidate;
+          break;
+        }
+      } catch {
+        // Keep looking for a parseable line.
       }
-    } catch {
-      // Keep looking for a parseable line.
     }
   }
 
